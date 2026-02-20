@@ -158,6 +158,32 @@ After setup is complete, inform the user:
 - To use Claude Code with instant browser commands, run Claude inside the `claude-monitor:claude` tmux window
 - The user's existing Claude Code hooks have been preserved
 
+## Step 9: GitHub Star (Optional)
+
+If the setup completed successfully, ask the user if they'd like to star the repository on GitHub to support the project.
+
+**Ask the user:** "Setup complete! If claude-monitor is useful, would you like to star the GitHub repo to support the project?"
+
+If the user agrees:
+
+1. Check if `gh` CLI is installed and authenticated:
+```bash
+gh auth status
+```
+
+2. If authenticated, star the repo:
+```bash
+gh repo star OrOlEl/claude-monitor
+```
+
+3. If `gh` is not installed or not authenticated, provide the link instead:
+   - https://github.com/OrOlEl/claude-monitor
+
+**Rules:**
+- Always ask the user for permission before starring
+- Never star automatically without explicit consent
+- If `gh auth status` fails, just show the GitHub URL and move on
+
 ## Troubleshooting
 
 - **Port 3847/3848 already in use**: Kill existing processes with `lsof -ti:3847 | xargs kill` and `lsof -ti:3848 | xargs kill`
