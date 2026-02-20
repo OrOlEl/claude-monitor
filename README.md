@@ -2,6 +2,7 @@
 
 Real-time monitoring dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Captures every request, tool call, agent spawn, and model thinking event via Claude Code's hook system and visualizes them as an interactive Argo CD-style execution tree.
 
+![Version](https://img.shields.io/badge/version-0.0.1-green)
 ![Architecture: Hooks → JSONL → Server → WebSocket → Dashboard](https://img.shields.io/badge/stack-Next.js_|_Express_|_Socket.IO-blue)
 
 ---
@@ -436,6 +437,105 @@ If the monitor server is down, hooks exit cleanly without blocking Claude Code.
 | Server | Node.js, Express, Socket.IO, chokidar |
 | Data | JSONL (JSON Lines), append-only |
 | Integration | Claude Code hooks (bash) |
+
+## Update
+
+> Tell your AI assistant: **"claude-monitor 업데이트해줘"** or **"Update claude-monitor"**
+
+<details>
+<summary><b>LLM Update Instructions (click to expand)</b></summary>
+
+### For AI Assistants: Claude Monitor Update Guide
+
+You are updating **claude-monitor** to the latest version. Follow these steps carefully.
+
+#### Step 1: Check Current Version
+
+```bash
+cd <PROJECT_ROOT>
+git describe --tags --abbrev=0 2>/dev/null || echo "no tag"
+```
+
+#### Step 2: Pull Latest Code
+
+```bash
+cd <PROJECT_ROOT>
+git pull origin main
+```
+
+This automatically updates hook scripts (they are referenced by absolute path to this directory).
+
+#### Step 3: Check if New Hooks Were Added
+
+Compare the hooks in `~/.claude/settings.json` with the current hook list.
+
+**Required hooks** (check all exist in settings.json):
+
+| Hook Event | Script |
+|------------|--------|
+| `UserPromptSubmit` | `<PROJECT_ROOT>/hooks/prompt-inject.sh` |
+| `UserPromptSubmit` | `<PROJECT_ROOT>/hooks/req-tracker.sh` |
+| `PreToolUse` | `<PROJECT_ROOT>/collector/collector.sh` |
+| `PostToolUse` | `<PROJECT_ROOT>/collector/collector.sh` |
+| `SubagentStart` | `<PROJECT_ROOT>/collector/subagent-tracker.sh` |
+| `SubagentStop` | `<PROJECT_ROOT>/collector/subagent-tracker.sh` |
+| `Stop` | `<PROJECT_ROOT>/hooks/req-end.sh` |
+
+If any are missing, add them to `~/.claude/settings.json` (merge, don't overwrite).
+If new scripts were added, run: `chmod +x <PROJECT_ROOT>/hooks/*.sh <PROJECT_ROOT>/collector/*.sh`
+
+#### Step 4: Rebuild and Restart Containers
+
+```bash
+cd <PROJECT_ROOT>
+docker compose down
+docker compose up -d --build
+```
+
+#### Step 5: Verify
+
+1. Health check: `curl http://localhost:3847/health`
+2. Open `http://localhost:3848` — dashboard should load
+3. Use Claude Code — events should appear in real time
+
+#### Step 6: Check Release Notes (Optional)
+
+```bash
+cd <PROJECT_ROOT>
+git log --oneline $(git describe --tags --abbrev=0 @^ 2>/dev/null || echo "HEAD~10")..HEAD
+```
+
+</details>
+
+### Manual Update
+
+```bash
+# 1. Pull latest
+cd /path/to/claude-monitor
+git pull origin main
+
+# 2. Rebuild containers
+docker compose down
+docker compose up -d --build
+
+# 3. Verify
+curl http://localhost:3847/health
+```
+
+Hook scripts update automatically via `git pull` (they're referenced by path).
+If a new version adds hooks, check the release notes and add them to `~/.claude/settings.json`.
+
+### Version Scheme
+
+This project follows [Semantic Versioning](https://semver.org/):
+
+| Change Type | Version Bump | Update Action |
+|-------------|-------------|---------------|
+| Bug fix, UI tweak | **PATCH** (0.0.x) | `git pull` + `docker compose up -d --build` |
+| New feature, new event type | **MINOR** (0.x.0) | Same + check for new hooks in settings.json |
+| Breaking change, hook restructure | **MAJOR** (x.0.0) | Follow migration guide in release notes |
+
+---
 
 ## Uninstall / Rollback
 
