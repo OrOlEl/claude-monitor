@@ -175,7 +175,7 @@ function ArgoBox({ node }) {
   }
 
   return (
-    <div className={`relative rounded-lg border-2 ${expanded ? 'max-w-[400px]' : widthClass}
+    <div data-node-status={node.status} data-node-type={node.type} className={`relative rounded-lg border-2 ${expanded ? 'max-w-[400px]' : widthClass}
       ${live ? `${t.border} ${t.bg}` : t.dim} transition-all`}>
       <div
         className={`flex items-center gap-2 px-3 py-2 whitespace-nowrap ${hasDetail ? 'cursor-pointer' : ''}`}
@@ -543,7 +543,7 @@ function RequestCard({ reqNode, defaultOpen, onDismiss, activeTeam, teamMessages
   const currentActivity = live ? findCurrentActivity(reqNode) : null;
 
   return (
-    <div className={`rounded-lg border overflow-hidden transition-all group ${
+    <div data-status={reqNode.status} className={`rounded-lg border overflow-hidden transition-all group ${
       live ? 'border-blue-500/50 bg-blue-500/5' : 'border-zinc-700/50 bg-zinc-800/20'
     }`}>
       {/* Header */}

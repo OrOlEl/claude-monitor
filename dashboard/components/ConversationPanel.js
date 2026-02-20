@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { User, Bot, Terminal, ChevronDown, ChevronRight } from 'lucide-react';
 import { shortenToolName, getDetailPreview } from '../utils/toolNames';
+import { MarkdownText } from './MarkdownText';
 
 function ToolCallItem({ toolUse, toolResult }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -135,7 +136,7 @@ function MessageBubble({ message, index, messages }) {
           )}
           {textContent && (
             <div className={`rounded-lg p-3 ${isUser ? 'bg-blue-500/20 text-argo-text' : 'bg-argo-card text-argo-text'}`}>
-              <pre className="whitespace-pre-wrap break-words font-sans text-sm">{textContent}</pre>
+              <MarkdownText>{textContent}</MarkdownText>
             </div>
           )}
           {toolUses.length > 0 && (

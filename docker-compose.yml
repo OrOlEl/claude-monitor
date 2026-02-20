@@ -1,0 +1,22 @@
+services:
+  server:
+    build: ./server
+    ports:
+      - "127.0.0.1:3847:3847"
+    volumes:
+      - ${HOME}/.claude-monitor:/home/node/.claude-monitor
+      - ${HOME}/.claude:/home/node/.claude:ro
+    environment:
+      - HOST=0.0.0.0
+      - ALLOWED_ORIGINS=http://localhost:3848
+    restart: unless-stopped
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "127.0.0.1:3848:3848"
+    environment:
+      - NEXT_PUBLIC_WS_URL=http://localhost:3847
+    depends_on:
+      - server
+    restart: unless-stopped

@@ -5,7 +5,11 @@ const chokidar = require('chokidar');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execSync } = require('child_process');
 const uuidv4 = () => crypto.randomUUID();
+
+const TMUX_SESSION = process.env.TMUX_SESSION || 'claude';
+const TMUX_PROMPT_PATTERN = process.env.TMUX_PROMPT_PATTERN || '>|❯';
 
 const app = express();
 const server = http.createServer(app);
@@ -31,6 +35,9 @@ const TEAM_TASKS_DIR = path.join(process.env.HOME, '.claude', 'tasks');
 const events = [];
 const MAX_EVENTS = 1000;
 
+const commandHistory = [];
+const MAX_COMMAND_HISTORY = 100;
+
 const transcriptTracking = new Map();
 const conversationHistory = [];
 const MAX_CONVERSATION_HISTORY = 500;
@@ -55,13 +62,36 @@ app.post('/api/command', (req, res) => {
   if (command.length > 2000) {
     return res.status(400).json({ error: 'command exceeds maximum length of 2000 characters' });
   }
+  // Save to history (deduplicate consecutive)
+  if (commandHistory[0] !== command) {
+    commandHistory.unshift(command);
+    if (commandHistory.length > MAX_COMMAND_HISTORY) commandHistory.pop();
+  }
+
+  let method = 'queue';
   const commandEntry = {
     id: uuidv4(),
     timestamp: new Date().toISOString(),
     sessionId: sessionId || 'unknown',
     command: command,
-    status: 'pending'
+    status: 'pending',
+    method: 'queue'
   };
+
+  // Attempt tmux injection if available (regardless of idle state)
+  if (isTmuxAvailable()) {
+    try {
+      const idle = isClaudeIdle();
+      sendViaTmux(command);
+      method = idle ? 'tmux' : 'tmux-queued';
+      commandEntry.method = method;
+      commandEntry.status = 'sent';
+      console.log(`[command] Sent via tmux (${method}): ${command.substring(0, 50)}${command.length > 50 ? '...' : ''}`);
+    } catch (tmuxError) {
+      console.warn('[command] tmux send failed, falling back to queue:', tmuxError.message);
+    }
+  }
+
   try {
     const dir = path.dirname(COMMANDS_FILE);
     if (!fs.existsSync(dir)) {
@@ -69,7 +99,7 @@ app.post('/api/command', (req, res) => {
     }
     fs.appendFileSync(COMMANDS_FILE, JSON.stringify(commandEntry) + '\n');
     io.emit('commandQueued', commandEntry);
-    console.log(`[command] Queued: ${command.substring(0, 50)}${command.length > 50 ? '...' : ''}`);
+    console.log(`[command] Queued (method=${method}): ${command.substring(0, 50)}${command.length > 50 ? '...' : ''}`);
     res.json({ success: true, command: commandEntry });
   } catch (error) {
     console.error('Failed to queue command:', error);
@@ -91,6 +121,40 @@ app.get('/api/commands', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to read commands' });
   }
+});
+
+// Hook-based tmux idle notifications (event-driven)
+app.post('/api/tmux-idle', (req, res) => {
+  const prev = hookIdleState;
+  hookIdleState = true;
+  hookIdleTimestamp = Date.now();
+  console.log(`[tmux-hook] Claude is IDLE (via hook)`);
+  if (prev !== true) {
+    io.emit('tmuxStatus', getTmuxStatus());
+  }
+  res.json({ ok: true, state: 'idle' });
+});
+
+app.get('/api/tmux/status', (req, res) => {
+  lastTmuxCheck = 0; // Force fresh check
+  const status = getTmuxStatus();
+  res.json({
+    ...status,
+    hookIdleState,
+    hookAge: hookIdleTimestamp ? Date.now() - hookIdleTimestamp : null,
+    serverUptime: Math.floor(process.uptime()),
+  });
+});
+
+app.post('/api/tmux-busy', (req, res) => {
+  const prev = hookIdleState;
+  hookIdleState = false;
+  hookIdleTimestamp = Date.now();
+  console.log(`[tmux-hook] Claude is BUSY (via hook)`);
+  if (prev !== false) {
+    io.emit('tmuxStatus', getTmuxStatus());
+  }
+  res.json({ ok: true, state: 'busy' });
 });
 
 function loadInitialEvents() {
@@ -395,7 +459,12 @@ io.on('connection', (socket) => {
   socket.emit('init', {
     events: events.slice(-100),
     conversations: conversationsWithSessionId,
-    teams: getAllTeams()
+    teams: getAllTeams(),
+    tmux: getTmuxStatus(),
+    commandHistory: commandHistory,
+  });
+  socket.on('getCommandHistory', () => {
+    socket.emit('commandHistory', commandHistory);
   });
   socket.on('sendCommand', (data) => {
     const { sessionId, command } = data;
@@ -407,18 +476,43 @@ io.on('connection', (socket) => {
       socket.emit('commandError', { error: 'command exceeds maximum length' });
       return;
     }
+    // Save to history (deduplicate consecutive)
+    if (commandHistory[0] !== command) {
+      commandHistory.unshift(command);
+      if (commandHistory.length > MAX_COMMAND_HISTORY) commandHistory.pop();
+    }
+
+    let method = 'queue';
     const commandEntry = {
       id: uuidv4(),
       timestamp: new Date().toISOString(),
       sessionId: sessionId || 'unknown',
-      command, status: 'pending'
+      command,
+      status: 'pending',
+      method: 'queue'
     };
+
+    // Attempt tmux injection if available (regardless of idle state)
+    if (isTmuxAvailable()) {
+      try {
+        const idle = isClaudeIdle();
+        sendViaTmux(command);
+        method = idle ? 'tmux' : 'tmux-queued';
+        commandEntry.method = method;
+        commandEntry.status = 'sent';
+        console.log(`[command] Sent via tmux (${method}, WS): ${command.substring(0, 50)}`);
+      } catch (tmuxError) {
+        console.warn('[command] tmux send failed (WS), falling back to queue:', tmuxError.message);
+      }
+    }
+
     try {
       const dir = path.dirname(COMMANDS_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(COMMANDS_FILE, JSON.stringify(commandEntry) + '\n');
       io.emit('commandQueued', commandEntry);
-      console.log(`[command] Queued via WS: ${command.substring(0, 50)}`);
+      socket.emit('commandStatus', { id: commandEntry.id, method, status: commandEntry.status });
+      console.log(`[command] Queued via WS (method=${method}): ${command.substring(0, 50)}`);
     } catch (error) {
       socket.emit('commandError', { error: 'Failed to queue command' });
     }
@@ -431,6 +525,26 @@ io.on('connection', (socket) => {
 function handleStopEvent(event) {
   if (event.type === 'session_end' && event.transcript_path) {
     associateTranscriptWithSession(event.session_id || 'unknown', event.transcript_path);
+  }
+
+  // Event-based idle tracking (backup for HTTP hook notifications)
+  if (event.tmux_session && event.tmux_session === TMUX_SESSION) {
+    const prev = hookIdleState;
+    if (event.type === 'req_end') {
+      hookIdleState = true;
+      hookIdleTimestamp = Date.now();
+      if (prev !== true) {
+        io.emit('tmuxStatus', getTmuxStatus());
+        console.log(`[tmux-event] Claude IDLE (from events.jsonl)`);
+      }
+    } else if (event.type === 'req_start') {
+      hookIdleState = false;
+      hookIdleTimestamp = Date.now();
+      if (prev !== false) {
+        io.emit('tmuxStatus', getTmuxStatus());
+        console.log(`[tmux-event] Claude BUSY (from events.jsonl)`);
+      }
+    }
   }
 }
 
@@ -535,11 +649,145 @@ function watchTeamDirectories() {
   console.log(`[teams] Watching: ${TEAMS_DIR}, ${TEAM_TASKS_DIR}`);
 }
 
+// ── tmux Integration ──
+
+const SAFE_TMUX_TARGET = /^[a-zA-Z0-9_:.\-]+$/;
+const SAFE_PID = /^\d+$/;
+
+let cachedTmuxTarget = null;
+let cachedTmuxStatus = false;
+let lastTmuxCheck = 0;
+const TMUX_CHECK_INTERVAL = 3000; // 3 seconds cache
+
+// Hook-based idle state (event-driven, no polling)
+// null = unknown (fallback to tmux capture-pane), true = idle, false = busy
+let hookIdleState = null;
+let hookIdleTimestamp = 0;
+
+function findClaudeTarget() {
+  // Auto-detect tmux pane running Claude Code
+  // Scan all panes: check pane_current_command AND child processes for 'claude'
+  try {
+    const output = execSync(
+      "tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{pane_current_command} #{pane_pid}'",
+      { encoding: 'utf-8', timeout: 2000 }
+    ).trim();
+    for (const line of output.split('\n')) {
+      const parts = line.split(' ');
+      const target = parts[0];
+      const panePid = parts[parts.length - 1]; // PID is always last
+      const cmd = parts.slice(1, -1).join(' ').toLowerCase(); // command may contain spaces
+
+      // Validate target format (session:window.pane)
+      if (!SAFE_TMUX_TARGET.test(target)) continue;
+
+      // Direct match on pane command
+      if (cmd.includes('claude')) return target;
+
+      // Check child processes of this pane for 'claude'
+      // NOTE: pgrep -P is unreliable on macOS, use ps + awk instead
+      if (panePid && SAFE_PID.test(panePid)) {
+        try {
+          const children = execSync(
+            `ps -axo ppid=,comm= | awk '$1 == ${panePid} { print $2 }'`,
+            { encoding: 'utf-8', timeout: 1000 }
+          ).trim();
+          if (children.toLowerCase().includes('claude')) return target;
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // Fallback: check if configured session exists
+  if (SAFE_TMUX_TARGET.test(TMUX_SESSION)) {
+    try {
+      execSync(`tmux has-session -t ${TMUX_SESSION}`, { stdio: 'ignore', timeout: 2000 });
+      return TMUX_SESSION;
+    } catch {}
+  }
+
+  return null;
+}
+
+function isTmuxAvailable() {
+  const now = Date.now();
+  if (now - lastTmuxCheck < TMUX_CHECK_INTERVAL) return cachedTmuxStatus;
+  lastTmuxCheck = now;
+
+  try {
+    execSync('tmux -V', { stdio: 'ignore', timeout: 2000 });
+  } catch {
+    cachedTmuxStatus = false;
+    cachedTmuxTarget = null;
+    return false;
+  }
+
+  const target = findClaudeTarget();
+  cachedTmuxTarget = target;
+  cachedTmuxStatus = target !== null;
+  return cachedTmuxStatus;
+}
+
+function getTmuxTarget() {
+  if (!cachedTmuxTarget) isTmuxAvailable();
+  return cachedTmuxTarget || TMUX_SESSION;
+}
+
+function isClaudeIdle() {
+  // Hook-based state only (event-driven from Stop/UserPromptSubmit hooks)
+  // Returns false when unknown (null) - capture-pane is unreliable because
+  // Claude Code TUI always renders ❯ even when busy, causing false positives
+  return hookIdleState === true;
+}
+
+function shellEscape(str) {
+  return "'" + str.replace(/'/g, "'\\''") + "'";
+}
+
+function sendViaTmux(command) {
+  const target = getTmuxTarget();
+  if (!SAFE_TMUX_TARGET.test(target)) throw new Error('Invalid tmux target');
+  execSync(`tmux send-keys -t ${target} -l ${shellEscape(command)}`, { timeout: 5000 });
+  execSync(`tmux send-keys -t ${target} Enter`, { timeout: 5000 });
+}
+
+function getTmuxStatus() {
+  const available = isTmuxAvailable();
+  return {
+    available,
+    target: cachedTmuxTarget,
+    session: TMUX_SESSION,
+    idle: available ? isClaudeIdle() : false,
+    source: hookIdleState !== null ? 'hook' : 'initializing',
+  };
+}
+
 const HOST = process.env.HOST || '127.0.0.1';
 server.listen(PORT, HOST, () => {
   console.log(`Claude Monitor Server running on port ${PORT}`);
   loadInitialEvents();
+
+  // Initialize hookIdleState optimistically if tmux Claude is detected
+  // Assume idle until first hook fires (hooks are reliable once active)
+  if (isTmuxAvailable()) {
+    hookIdleState = true;
+    hookIdleTimestamp = Date.now();
+    console.log(`[tmux-init] Claude detected in tmux, assuming IDLE until first hook fires`);
+  }
+
   watchEventsFile();
   watchTranscriptFiles();
   watchTeamDirectories();
+
+  // Broadcast tmux status every 5 seconds
+  let lastBroadcastStatus = null;
+  setInterval(() => {
+    const status = getTmuxStatus();
+    const statusKey = `${status.available}:${status.target}:${status.idle}`;
+    if (statusKey !== lastBroadcastStatus) {
+      lastBroadcastStatus = statusKey;
+      io.emit('tmuxStatus', status);
+      console.log(`[tmux] Status: available=${status.available}, target=${status.target}, idle=${status.idle}`);
+    }
+  }, 5000);
 });

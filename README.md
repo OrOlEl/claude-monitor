@@ -2,8 +2,49 @@
 
 Real-time monitoring dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Captures every request, tool call, agent spawn, and model thinking event via Claude Code's hook system and visualizes them as an interactive Argo CD-style execution tree.
 
-![Version](https://img.shields.io/badge/version-0.0.1-green)
+![Version](https://img.shields.io/badge/version-0.0.2-blue)
 ![Architecture: Hooks → JSONL → Server → WebSocket → Dashboard](https://img.shields.io/badge/stack-Next.js_|_Express_|_Socket.IO-blue)
+
+---
+
+## Prerequisites
+
+| Requirement | Required | Purpose |
+|-------------|----------|---------|
+| **Node.js 18+** | ✅ | Server & Dashboard |
+| **Docker & Docker Compose** | ⬜ Docker mode only | Container deployment |
+| **tmux** | ⬜ Recommended | Instant browser → Claude command injection |
+
+### tmux Installation
+
+tmux is required for real-time browser command injection. Without it, commands are queued until the next prompt.
+
+| Platform | Command |
+|----------|---------|
+| **macOS** | `brew install tmux` |
+| **Ubuntu / Debian** | `sudo apt install tmux` |
+| **Fedora / RHEL** | `sudo dnf install tmux` |
+| **Arch Linux** | `sudo pacman -S tmux` |
+| **Windows** | WSL 내에서 `sudo apt install tmux` |
+
+설치 확인:
+```bash
+tmux -V
+# 예: tmux 3.4
+```
+
+### Docker Installation (Docker mode only)
+
+| Platform | Guide |
+|----------|-------|
+| **macOS** | [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/) |
+| **Linux** | `curl -fsSL https://get.docker.com \| sh` |
+| **Windows** | [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/) (WSL2 backend) |
+
+설치 확인:
+```bash
+docker --version && docker compose version
+```
 
 ---
 
@@ -37,6 +78,24 @@ HOST (user's machine)                    DOCKER
 ```
 
 **Critical constraint:** Hook scripts run on the HOST (not in Docker) because Claude Code invokes them directly. Only the server and dashboard run in containers.
+
+#### Step 0: Check Prerequisites
+
+```bash
+# Node.js (required)
+node -v  # Must be 18+
+
+# Docker (required for Docker mode)
+docker --version && docker compose version
+
+# tmux (optional but recommended for instant commands)
+tmux -V || echo "tmux not installed — browser commands will be queued instead of instant"
+```
+
+If tmux is not installed and the user wants instant browser command injection, install it first:
+- macOS: `brew install tmux`
+- Ubuntu/Debian: `sudo apt install tmux`
+- Fedora: `sudo dnf install tmux`
 
 #### Step 1: Create Docker Files
 
@@ -201,8 +260,53 @@ docker compose up -d --build
 - **macOS file watching:** If events don't appear, add `CHOKIDAR_USEPOLLING=1` to the server environment in docker-compose.yml.
 - **Permission errors on volume mounts:** Run `chmod 700 ~/.claude-monitor` to ensure proper access.
 - **Dashboard can't connect to server:** The dashboard's `NEXT_PUBLIC_WS_URL` is used client-side (in the browser), so `http://localhost:3847` is correct since the browser runs on the host.
+- **For instant browser command injection:** Use `./start-with-tmux.sh` instead of Docker. This enables real-time command delivery via tmux send-keys rather than queued delivery on the next prompt.
 
 </details>
+
+---
+
+## Native + tmux Setup (Recommended)
+
+For instant command injection from the browser dashboard, run with tmux:
+
+### Quick Start
+```bash
+git clone https://github.com/OrOlEl/claude-monitor.git
+cd claude-monitor
+./start-with-tmux.sh
+```
+
+This creates a tmux session with 3 windows:
+- **server** — Event relay server (:3847)
+- **dashboard** — Monitoring UI (:3848)
+- **claude** — Claude Code (commands from browser are sent here)
+
+### Manual tmux Setup
+```bash
+# 1. Start server
+cd server && TMUX_SESSION=claude node src/index.js &
+
+# 2. Start dashboard
+cd dashboard && npm run dev &
+
+# 3. Run Claude Code in named tmux session
+tmux new-session -s claude 'claude'
+```
+
+### Deployment Modes
+
+| Mode | Server | tmux | Browser → Claude |
+|------|--------|------|------------------|
+| **Native + tmux** | Host process | ✅ | Instant (tmux send-keys) |
+| **Docker** | Container | ❌ | Queued (next prompt) |
+
+Native + tmux mode is recommended for the full experience. Docker mode still works but browser commands are only delivered on the next prompt.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TMUX_SESSION` | `claude` | tmux session name for Claude Code |
+| `TMUX_PROMPT_PATTERN` | `>\|❯` | Regex pattern to detect Claude Code's input prompt |
 
 ---
 

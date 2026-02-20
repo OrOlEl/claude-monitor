@@ -52,9 +52,12 @@ export const useEventStore = create((set, get) => ({
 
   addEvent: (event) => set((state) => {
     const newEvents = [...state.events, event].slice(-500);
+    // Don't switch active session for subagent events (session_ids like "agent-xxx")
+    // This prevents tree flickering when teams are running
+    const isSubagent = event.session_id && event.session_id.startsWith('agent-');
     return {
       events: newEvents,
-      sessionId: event.session_id || state.sessionId
+      sessionId: isSubagent ? state.sessionId : (event.session_id || state.sessionId)
     };
   }),
 

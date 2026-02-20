@@ -1,6 +1,6 @@
 #!/bin/bash
 # UserPromptSubmit Hook: Capture user request as req_start event
-# This creates the top-level "req" node in the execution tree
+# Also notifies monitor server that Claude is now BUSY (for tmux chat)
 #
 # SAFETY: Always outputs valid JSON. Never blocks LLM execution.
 
@@ -38,6 +38,13 @@ if [ -z "${INPUT//[[:space:]]/}" ]; then
   exit 0
 fi
 
+# Detect tmux session for busy tracking
+TMUX_SESSION_NAME=""
+if [ -n "$TMUX" ]; then
+  TMUX_SESSION_NAME=$(tmux display-message -p '#{session_name}' 2>/dev/null)
+  export _TMUX_SESSION_NAME="$TMUX_SESSION_NAME"
+fi
+
 printf '%s' "$INPUT" | python3 -c "
 import json, sys, time, uuid, os
 
@@ -73,11 +80,26 @@ event = {
     'project': project,
 }
 
+# Include tmux session info for busy tracking
+tmux_session = os.environ.get('_TMUX_SESSION_NAME', '')
+if tmux_session:
+    event['tmux_session'] = tmux_session
+
 try:
     with open(os.path.expanduser('~/.claude-monitor/events.jsonl'), 'a') as f:
         f.write(json.dumps(event) + '\n')
 except:
     pass
 " 2>/dev/null
+
+# Direct HTTP notification to server: Claude is now BUSY
+# Only send if we're in a tmux session (this is the tmux Claude)
+if [ -n "$TMUX_SESSION_NAME" ]; then
+  curl -fsS --connect-timeout 0.3 --max-time 0.5 \
+    -X POST "http://$MONITOR_HOST:$MONITOR_PORT/api/tmux-busy" \
+    -H 'Content-Type: application/json' \
+    -d "{\"session\":\"$TMUX_SESSION_NAME\"}" \
+    >/dev/null 2>&1 &
+fi
 
 exit 0
