@@ -115,7 +115,12 @@ chmod 700 ~/.claude-monitor
 
 #### Step 3: Configure Claude Code Hooks
 
-Read the user's current `~/.claude/settings.json`. If it exists, **merge** the hooks below into the existing config (do not overwrite other settings). If it doesn't exist, create it.
+**First, back up the existing config:**
+```bash
+cp ~/.claude/settings.json ~/.claude/settings.json.backup 2>/dev/null || true
+```
+
+Read the user's current `~/.claude/settings.json`. If it exists, **merge** the hooks below into the existing config — do NOT overwrite other settings or existing hooks. If it doesn't exist, create it.
 
 Get the **absolute path** to the cloned repository. Use that path in the hook commands below.
 
@@ -211,7 +216,11 @@ cd claude-monitor
 
 ### 2. Configure Hooks
 
-Add to `~/.claude/settings.json` (merge with existing config if present):
+Back up and merge into `~/.claude/settings.json`:
+
+```bash
+cp ~/.claude/settings.json ~/.claude/settings.json.backup 2>/dev/null || true
+```
 
 ```jsonc
 {
@@ -387,6 +396,75 @@ If the monitor server is down, hooks exit cleanly without blocking Claude Code.
 | Server | Node.js, Express, Socket.IO, chokidar |
 | Data | JSONL (JSON Lines), append-only |
 | Integration | Claude Code hooks (bash) |
+
+## Uninstall / Rollback
+
+> Tell your AI assistant: **"claude-monitor 제거해줘"** or **"Uninstall claude-monitor"**
+
+<details>
+<summary><b>LLM Uninstall Instructions (click to expand)</b></summary>
+
+### For AI Assistants: Claude Monitor Removal Guide
+
+You are removing **claude-monitor**. Follow these steps carefully. Do NOT delete any file without confirming the path first.
+
+#### Step 1: Stop Docker Containers
+
+```bash
+cd <PROJECT_ROOT>
+docker compose down --rmi local
+```
+
+If docker-compose.yml doesn't exist, skip this step.
+
+#### Step 2: Restore Claude Code Hooks
+
+Check if a backup exists:
+```bash
+ls ~/.claude/settings.json.backup
+```
+
+**If backup exists:** restore it.
+```bash
+cp ~/.claude/settings.json.backup ~/.claude/settings.json
+```
+
+**If no backup:** read `~/.claude/settings.json` and remove only the hook entries that reference `claude-monitor`. Keep all other hooks intact. The entries to remove contain paths like `*/claude-monitor/hooks/*` or `*/claude-monitor/collector/*`.
+
+**Important:** Do NOT delete `~/.claude/settings.json` entirely — it may contain other settings.
+
+#### Step 3: Clean Up Data (Optional)
+
+The event log directory. Only delete if the user confirms:
+```bash
+rm -rf ~/.claude-monitor/
+```
+
+#### Step 4: Remove Project Directory (Optional)
+
+```bash
+rm -rf <PROJECT_ROOT>
+```
+
+</details>
+
+### Manual Uninstall
+
+```bash
+# 1. Stop containers
+cd /path/to/claude-monitor && docker compose down --rmi local
+
+# 2. Restore hooks backup
+cp ~/.claude/settings.json.backup ~/.claude/settings.json
+
+# 3. (Optional) Remove event data
+rm -rf ~/.claude-monitor/
+
+# 4. (Optional) Remove project
+rm -rf /path/to/claude-monitor
+```
+
+If you don't have a backup, manually edit `~/.claude/settings.json` and remove all hook entries containing `claude-monitor`.
 
 ## License
 

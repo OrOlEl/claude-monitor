@@ -6,6 +6,15 @@ If the user asks to set up, install, or configure this project:
 1. Read `README.md` — the "LLM Setup Instructions" section inside the `<details>` block
 2. Follow all 6 steps exactly as described
 3. The setup creates Docker containers for server + dashboard, and configures Claude Code hooks on the host
+4. CRITICAL: Always back up `~/.claude/settings.json` before modifying it
+5. CRITICAL: Merge hooks into existing config — never overwrite the entire file
+
+## Uninstall
+
+If the user asks to remove, uninstall, or rollback this project:
+1. Read `README.md` — the "LLM Uninstall Instructions" section inside the `<details>` block
+2. Follow all steps exactly as described
+3. Restore `~/.claude/settings.json` from backup if available, otherwise surgically remove only claude-monitor entries
 
 ## Project Overview
 
