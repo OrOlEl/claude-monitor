@@ -50,7 +50,19 @@ docker --version && docker compose version
 
 ## Quick Start (AI Assistant)
 
-> Tell your AI coding assistant (Claude Code, Cursor, etc.) one of these:
+### Claude Code (Recommended)
+
+If you're using **Claude Code**, just run the built-in setup command:
+
+```
+/project:setup
+```
+
+This automatically installs dependencies, configures hooks, builds the dashboard, and starts everything with tmux for instant browser command injection.
+
+### Other AI Assistants
+
+> Tell your AI coding assistant (Cursor, Windsurf, etc.) one of these:
 > - **"Set up this project with Docker"**
 > - **"이 프로젝트 도커로 셋팅해줘"**
 >
