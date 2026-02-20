@@ -417,21 +417,24 @@ docker compose down --rmi local
 
 If docker-compose.yml doesn't exist, skip this step.
 
-#### Step 2: Restore Claude Code Hooks
+#### Step 2: Remove Claude Monitor Hooks
 
-Check if a backup exists:
-```bash
-ls ~/.claude/settings.json.backup
-```
+Read `~/.claude/settings.json` and remove **only** the hook entries that contain `claude-monitor` in their command path. Keep all other hooks and settings intact.
 
-**If backup exists:** restore it.
-```bash
-cp ~/.claude/settings.json.backup ~/.claude/settings.json
-```
+The entries to remove are those whose `command` field contains any of:
+- `claude-monitor/hooks/prompt-inject.sh`
+- `claude-monitor/hooks/req-tracker.sh`
+- `claude-monitor/hooks/req-end.sh`
+- `claude-monitor/collector/collector.sh`
+- `claude-monitor/collector/subagent-tracker.sh`
 
-**If no backup:** read `~/.claude/settings.json` and remove only the hook entries that reference `claude-monitor`. Keep all other hooks intact. The entries to remove contain paths like `*/claude-monitor/hooks/*` or `*/claude-monitor/collector/*`.
+**Rules:**
+- Do NOT delete `~/.claude/settings.json` — only edit it
+- Do NOT remove hooks that don't reference `claude-monitor`
+- If a hook event array (e.g., `UserPromptSubmit`) becomes empty after removal, remove the empty array key too
+- If the entire `hooks` object becomes empty, remove it but keep other top-level settings
 
-**Important:** Do NOT delete `~/.claude/settings.json` entirely — it may contain other settings.
+**Important:** Do NOT restore from backup — the user may have added other hooks after installing claude-monitor. Always surgically remove only claude-monitor entries.
 
 #### Step 3: Clean Up Data (Optional)
 
@@ -454,17 +457,19 @@ rm -rf <PROJECT_ROOT>
 # 1. Stop containers
 cd /path/to/claude-monitor && docker compose down --rmi local
 
-# 2. Restore hooks backup
-cp ~/.claude/settings.json.backup ~/.claude/settings.json
+# 2. Edit ~/.claude/settings.json
+#    Remove all hook entries whose "command" contains "claude-monitor"
+#    Keep everything else
 
 # 3. (Optional) Remove event data
 rm -rf ~/.claude-monitor/
 
 # 4. (Optional) Remove project
 rm -rf /path/to/claude-monitor
-```
 
-If you don't have a backup, manually edit `~/.claude/settings.json` and remove all hook entries containing `claude-monitor`.
+# 5. (Optional) Remove backup
+rm -f ~/.claude/settings.json.backup
+```
 
 ## License
 
