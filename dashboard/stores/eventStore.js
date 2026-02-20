@@ -11,7 +11,10 @@ export const useEventStore = create((set, get) => ({
   setConnected: (connected) => set({ connected }),
 
   initEvents: (events) => {
-    const sessionId = events.length > 0 ? events[events.length - 1].session_id : null;
+    // Find main session from the first req_start event (most reliable)
+    // The first req_start is always from the main session since it starts first
+    const reqStart = events.find(e => e.type === 'req_start');
+    const sessionId = reqStart?.session_id || (events.length > 0 ? events[0].session_id : null);
     set({ events, sessionId });
   },
 
@@ -52,12 +55,13 @@ export const useEventStore = create((set, get) => ({
 
   addEvent: (event) => set((state) => {
     const newEvents = [...state.events, event].slice(-500);
-    // Don't switch active session for subagent events (session_ids like "agent-xxx")
-    // This prevents tree flickering when teams are running
-    const isSubagent = event.session_id && event.session_id.startsWith('agent-');
+    // Keep sessionId sticky - only set if not yet established
+    // This prevents tree flickering when subagent events arrive with different session_ids
+    // Once the main session is identified, it stays pinned regardless of subagent activity
+    const newSessionId = state.sessionId || event.session_id || null;
     return {
       events: newEvents,
-      sessionId: isSubagent ? state.sessionId : (event.session_id || state.sessionId)
+      sessionId: newSessionId,
     };
   }),
 
@@ -122,6 +126,53 @@ export const useEventStore = create((set, get) => ({
     }
 
     return { runningSkills: openSkills, runningAgents: openAgents, runningTools: openTools };
+  },
+
+  // Build sessionId → agent name mapping from events
+  // Uses temporal correlation: agent_start (parent session) happens just before subagent's first event
+  getSessionAgentMap: () => {
+    const events = get().events;
+    const sessionId = get().sessionId;
+    const map = {};
+
+    // Collect agent_start events from the main session (these record spawned agents)
+    const agentStarts = events
+      .filter(e => e.type === 'agent_start' && e.session_id === sessionId && (e.agent_name || e.agent_type))
+      .map(e => ({
+        timestamp: e.timestamp,
+        name: e.agent_name || e.agent_type?.split(':').pop() || e.agent_type || '',
+        type: e.agent_type || '',
+        matched: false,
+      }));
+
+    // Collect first req_start per non-main session (subagent's first event)
+    const sessionFirstEvents = {};
+    for (const e of events) {
+      if (e.session_id && e.session_id !== sessionId && !sessionFirstEvents[e.session_id]) {
+        sessionFirstEvents[e.session_id] = e.timestamp;
+      }
+    }
+
+    // Match by temporal proximity (subagent's first event follows agent_start closely)
+    const sortedSessions = Object.entries(sessionFirstEvents).sort((a, b) => a[1] - b[1]);
+    for (const [sid, ts] of sortedSessions) {
+      let bestMatch = null;
+      let bestDelta = Infinity;
+      for (const as of agentStarts) {
+        if (as.matched) continue;
+        const delta = ts - as.timestamp;
+        if (delta >= 0 && delta < 10000 && delta < bestDelta) {
+          bestDelta = delta;
+          bestMatch = as;
+        }
+      }
+      if (bestMatch) {
+        map[sid] = bestMatch.name;
+        bestMatch.matched = true;
+      }
+    }
+
+    return map;
   },
 
   // Build hierarchical tree: req → task → skill → agent → tool

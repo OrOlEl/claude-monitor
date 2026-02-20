@@ -1,13 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageSquare, Activity } from 'lucide-react';
 import { ConversationPanel } from './ConversationPanel';
 import { ActivityLog } from './ActivityLog';
 import { ChatInput } from './ChatInput';
+import { CommandBuilder } from './CommandBuilder';
+import { useCommandBuilder } from '../hooks/useCommandBuilder';
 
-export function RightPanel({ conversations, events, socket, sessionId }) {
+export function RightPanel({ conversations, events, socket, sessionId, autoFollow = true }) {
   const [activeTab, setActiveTab] = useState('conversation');
+  const commandBuilder = useCommandBuilder();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const onInit = (data) => {
+      if (data.claudeScan) commandBuilder.loadScanData(data.claudeScan);
+    };
+    const onClaudeScanUpdated = async () => {
+      try {
+        const serverUrl = window.location.port === '3848' ? 'http://localhost:3847' : '';
+        const res = await fetch(`${serverUrl}/api/claude/scan`);
+        if (res.ok) {
+          const data = await res.json();
+          commandBuilder.loadScanData(data);
+        }
+      } catch {
+        // ignore fetch errors
+      }
+    };
+
+    socket.on('init', onInit);
+    socket.on('claudeScanUpdated', onClaudeScanUpdated);
+
+    return () => {
+      socket.off('init', onInit);
+      socket.off('claudeScanUpdated', onClaudeScanUpdated);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
 
   const tabs = [
     { id: 'conversation', label: 'Conversation', icon: MessageSquare },
@@ -37,15 +69,21 @@ export function RightPanel({ conversations, events, socket, sessionId }) {
         {activeTab === 'conversation' && (
           <>
             <div className="flex-1 overflow-hidden">
-              <ConversationPanel messages={conversations} sessionId={sessionId} />
+              <ConversationPanel messages={conversations} sessionId={sessionId} autoFollow={autoFollow} />
             </div>
             <div className="border-t border-argo-border p-3">
-              <ChatInput socket={socket} sessionId={sessionId} />
+              <CommandBuilder {...commandBuilder} />
+              <ChatInput
+                socket={socket}
+                sessionId={sessionId}
+                commandPrefix={commandBuilder.commandPrefix}
+                commandSuffix={commandBuilder.commandSuffix}
+              />
             </div>
           </>
         )}
         {activeTab === 'activity' && (
-          <ActivityLog events={events} />
+          <ActivityLog events={events} autoFollow={autoFollow} />
         )}
       </div>
     </div>

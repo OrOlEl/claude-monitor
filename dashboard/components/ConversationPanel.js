@@ -1,9 +1,30 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { User, Bot, Terminal, ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { User, Bot, Terminal, ChevronDown, ChevronRight, Cpu } from 'lucide-react';
 import { shortenToolName, getDetailPreview } from '../utils/toolNames';
 import { MarkdownText } from './MarkdownText';
+import { useEventStore } from '../stores/eventStore';
+
+// Generate consistent color from session ID hash
+const AGENT_COLORS = [
+  { bg: 'bg-emerald-500/20', border: 'border-emerald-500/60', text: 'text-emerald-400', avatarBg: 'bg-emerald-500/20' },
+  { bg: 'bg-orange-500/20', border: 'border-orange-500/60', text: 'text-orange-400', avatarBg: 'bg-orange-500/20' },
+  { bg: 'bg-pink-500/20', border: 'border-pink-500/60', text: 'text-pink-400', avatarBg: 'bg-pink-500/20' },
+  { bg: 'bg-cyan-500/20', border: 'border-cyan-500/60', text: 'text-cyan-400', avatarBg: 'bg-cyan-500/20' },
+  { bg: 'bg-yellow-500/20', border: 'border-yellow-500/60', text: 'text-yellow-400', avatarBg: 'bg-yellow-500/20' },
+  { bg: 'bg-violet-500/20', border: 'border-violet-500/60', text: 'text-violet-400', avatarBg: 'bg-violet-500/20' },
+  { bg: 'bg-rose-500/20', border: 'border-rose-500/60', text: 'text-rose-400', avatarBg: 'bg-rose-500/20' },
+  { bg: 'bg-lime-500/20', border: 'border-lime-500/60', text: 'text-lime-400', avatarBg: 'bg-lime-500/20' },
+];
+
+function hashSessionId(sid) {
+  let hash = 0;
+  for (let i = 0; i < sid.length; i++) {
+    hash = ((hash << 5) - hash + sid.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
 
 function ToolCallItem({ toolUse, toolResult }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -72,7 +93,7 @@ function ToolCallItem({ toolUse, toolResult }) {
   );
 }
 
-function MessageBubble({ message, index, messages }) {
+function MessageBubble({ message, index, messages, mainSessionId, sessionAgentMap }) {
   const msg = message.message || message;
   const entryType = message.type;
 
@@ -81,6 +102,8 @@ function MessageBubble({ message, index, messages }) {
   const isUser = entryType === 'user' || msg.role === 'user';
   const isAssistant = entryType === 'assistant' || msg.role === 'assistant';
   const rawContent = msg.content;
+  const msgSessionId = message.sessionId || '';
+  const isSubagent = mainSessionId && msgSessionId && msgSessionId !== mainSessionId;
 
   // Skip user messages that only contain tool_results
   if (isUser && Array.isArray(rawContent)) {
@@ -121,13 +144,33 @@ function MessageBubble({ message, index, messages }) {
 
   if (!textContent && !thinkingContent && toolUses.length === 0) return null;
 
+  // Determine agent display info for subagent messages
+  const agentColor = isSubagent ? AGENT_COLORS[hashSessionId(msgSessionId) % AGENT_COLORS.length] : null;
+  const agentName = isSubagent ? (sessionAgentMap[msgSessionId] || `agent-${msgSessionId.slice(0, 6)}`) : null;
+
+  // Avatar styling
+  const avatarBg = isUser
+    ? 'bg-blue-500/20'
+    : isSubagent ? agentColor.avatarBg : 'bg-argo-accent/20';
+  const avatarIcon = isUser
+    ? <User className="w-4 h-4 text-blue-400" />
+    : isSubagent
+      ? <Cpu className={`w-4 h-4 ${agentColor.text}`} />
+      : <Bot className="w-4 h-4 text-argo-accent" />;
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       <div className={`flex gap-3 max-w-[85%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-500/20' : 'bg-argo-accent/20'}`}>
-          {isUser ? <User className="w-4 h-4 text-blue-400" /> : <Bot className="w-4 h-4 text-argo-accent" />}
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${avatarBg}`} title={isSubagent ? `${agentName} (${msgSessionId.slice(0, 8)})` : undefined}>
+          {avatarIcon}
         </div>
         <div className="flex flex-col gap-2 min-w-0">
+          {isSubagent && isAssistant && (
+            <span className={`text-xs font-medium ${agentColor.text} flex items-center gap-1`}>
+              <span className={`inline-block w-2 h-2 rounded-full ${agentColor.avatarBg} border ${agentColor.border}`} />
+              {agentName}
+            </span>
+          )}
           {thinkingContent && (
             <details className="rounded-lg bg-purple-500/10 border border-purple-500/30">
               <summary className="px-3 py-2 text-xs text-purple-400 cursor-pointer hover:bg-purple-500/20">Thinking...</summary>
@@ -135,7 +178,13 @@ function MessageBubble({ message, index, messages }) {
             </details>
           )}
           {textContent && (
-            <div className={`rounded-lg p-3 ${isUser ? 'bg-blue-500/20 text-argo-text' : 'bg-argo-card text-argo-text'}`}>
+            <div className={`rounded-lg p-3 ${
+              isUser
+                ? 'bg-blue-500/20 text-argo-text'
+                : isSubagent
+                  ? `${agentColor.bg} border ${agentColor.border} text-argo-text`
+                  : 'bg-argo-card text-argo-text'
+            }`}>
               <MarkdownText>{textContent}</MarkdownText>
             </div>
           )}
@@ -152,16 +201,19 @@ function MessageBubble({ message, index, messages }) {
   );
 }
 
-export function ConversationPanel({ messages = [], sessionId }) {
+export function ConversationPanel({ messages = [], sessionId, autoFollow = true }) {
   const scrollRef = useRef(null);
   const prevMessagesLengthRef = useRef(messages.length);
+  const mainSessionId = useEventStore(s => s.sessionId);
+  const getSessionAgentMap = useEventStore(s => s.getSessionAgentMap);
+  const sessionAgentMap = useMemo(() => getSessionAgentMap(), [getSessionAgentMap, messages]);
 
   useEffect(() => {
-    if (scrollRef.current && messages.length > prevMessagesLengthRef.current) {
+    if (autoFollow && scrollRef.current && messages.length > prevMessagesLengthRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
     prevMessagesLengthRef.current = messages.length;
-  }, [messages]);
+  }, [messages, autoFollow]);
 
   if (!messages || messages.length === 0) {
     return (
@@ -178,7 +230,14 @@ export function ConversationPanel({ messages = [], sessionId }) {
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto px-4 py-4">
       {messages.map((message, index) => (
-        <MessageBubble key={message.id || index} message={message} index={index} messages={messages} />
+        <MessageBubble
+          key={message.id || index}
+          message={message}
+          index={index}
+          messages={messages}
+          mainSessionId={mainSessionId}
+          sessionAgentMap={sessionAgentMap}
+        />
       ))}
     </div>
   );

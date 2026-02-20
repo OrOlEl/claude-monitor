@@ -39,6 +39,7 @@ export default function Home() {
   const [mainTab, setMainTab] = useState('tree');
   const [, setTick] = useState(0);
   const [autoFollow, setAutoFollow] = useState(true);
+  const autoFollowRef = useRef(true);
   const [layoutSwapped, setLayoutSwapped] = useState(false);
   const [layoutVertical, setLayoutVertical] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -103,12 +104,17 @@ export default function Home() {
     return runningCard;
   }, []);
 
+  // Keep ref in sync with state so rAF callbacks check the latest value
+  useEffect(() => { autoFollowRef.current = autoFollow; }, [autoFollow]);
+
   // Auto-follow: scroll to latest running node when new events arrive
   const prevEventCount = useRef(0);
   useEffect(() => {
     if (mainTab !== 'tree' || !mainRef.current) return;
     if (events.length > prevEventCount.current && autoFollow) {
       requestAnimationFrame(() => {
+        // Re-check ref inside rAF: user may have toggled off between schedule and execution
+        if (!autoFollowRef.current || !mainRef.current) return;
         const target = findLatestRunningNode();
         if (target) {
           target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -313,6 +319,7 @@ export default function Home() {
                 events={filteredEvents}
                 socket={socket}
                 sessionId={activeSessionId}
+                autoFollow={autoFollow}
               />
             </aside>
           </>

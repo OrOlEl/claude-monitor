@@ -32,6 +32,15 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.env.HOME, '.c
 const TEAMS_DIR = path.join(process.env.HOME, '.claude', 'teams');
 const TEAM_TASKS_DIR = path.join(process.env.HOME, '.claude', 'tasks');
 
+const CLAUDE_DIR = path.join(process.env.HOME, '.claude');
+const CLAUDE_SC_DIR = path.join(CLAUDE_DIR, 'commands', 'sc');
+const CLAUDE_FLAGS_FILE = path.join(CLAUDE_DIR, 'FLAGS.md');
+const CLAUDE_AGENTS_DIR = path.join(CLAUDE_DIR, 'agents');
+
+let claudeScanCache = null;
+let claudeScanTimestamp = 0;
+const CLAUDE_SCAN_TTL = 10 * 60 * 1000; // 10 minutes
+
 const events = [];
 const MAX_EVENTS = 1000;
 
@@ -155,6 +164,21 @@ app.post('/api/tmux-busy', (req, res) => {
     io.emit('tmuxStatus', getTmuxStatus());
   }
   res.json({ ok: true, state: 'busy' });
+});
+
+app.get('/api/claude/scan', (req, res) => {
+  const force = req.query.force === 'true';
+  const now = Date.now();
+  if (!force && claudeScanCache && (now - claudeScanTimestamp) < CLAUDE_SCAN_TTL) {
+    return res.json(claudeScanCache);
+  }
+  try {
+    claudeScanCache = scanClaudeFolder();
+    claudeScanTimestamp = Date.now();
+    res.json(claudeScanCache);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to scan .claude folder' });
+  }
 });
 
 function loadInitialEvents() {
@@ -462,6 +486,7 @@ io.on('connection', (socket) => {
     teams: getAllTeams(),
     tmux: getTmuxStatus(),
     commandHistory: commandHistory,
+    claudeScan: claudeScanCache,
   });
   socket.on('getCommandHistory', () => {
     socket.emit('commandHistory', commandHistory);
@@ -546,6 +571,152 @@ function handleStopEvent(event) {
       }
     }
   }
+}
+
+// ── .claude Folder Scanner ──
+
+function parseFrontmatter(content) {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const fm = {};
+  for (const line of match[1].split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    let value = line.slice(colonIdx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    fm[key] = value;
+  }
+  return fm;
+}
+
+function scanSkills() {
+  const skills = [];
+  if (!fs.existsSync(CLAUDE_SC_DIR)) return skills;
+  try {
+    const files = fs.readdirSync(CLAUDE_SC_DIR).filter(f => f.endsWith('.md') && f !== 'README.md');
+    for (const file of files) {
+      try {
+        const content = fs.readFileSync(path.join(CLAUDE_SC_DIR, file), 'utf-8');
+        const fm = parseFrontmatter(content);
+        if (!fm) continue;
+        const id = fm.name || path.basename(file, '.md');
+        skills.push({
+          id,
+          name: fm.name || id,
+          command: `/sc:${id}`,
+          description: fm.description || '',
+          category: fm.category || 'general',
+          source: 'sc',
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return skills;
+}
+
+function scanFlags() {
+  const flags = [];
+  if (!fs.existsSync(CLAUDE_FLAGS_FILE)) return flags;
+  try {
+    const lines = fs.readFileSync(CLAUDE_FLAGS_FILE, 'utf-8').split('\n');
+    let currentCategory = 'general';
+    for (const line of lines) {
+      const sectionMatch = line.match(/^##\s+(.+)/);
+      if (sectionMatch) {
+        currentCategory = sectionMatch[1].trim();
+        continue;
+      }
+      const flagMatch = line.match(/^\*\*(--.+?)\*\*/);
+      if (!flagMatch) continue;
+      try {
+        const parts = flagMatch[1].split(/\s*\/\s*/).map(p => p.trim()).filter(Boolean);
+        const primaryFlag = parts[0];
+        flags.push({
+          id: primaryFlag.replace(/^--/, '').replace(/\s.*$/, ''),
+          flag: primaryFlag,
+          aliases: parts.slice(1),
+          category: currentCategory,
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return flags;
+}
+
+function scanAgents() {
+  const agents = [];
+  if (!fs.existsSync(CLAUDE_AGENTS_DIR)) return agents;
+  try {
+    const files = fs.readdirSync(CLAUDE_AGENTS_DIR).filter(f => f.endsWith('.md') && f !== 'README.md');
+    for (const file of files) {
+      try {
+        const content = fs.readFileSync(path.join(CLAUDE_AGENTS_DIR, file), 'utf-8');
+        const id = path.basename(file, '.md');
+        const fm = parseFrontmatter(content);
+        agents.push({
+          id,
+          name: fm?.name || id,
+          description: fm?.description || '',
+          category: fm?.category || 'general',
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return agents;
+}
+
+function scanClaudeFolder() {
+  const skills = scanSkills();
+  const flags = scanFlags();
+  const agents = scanAgents();
+  return {
+    scannedAt: new Date().toISOString(),
+    skills,
+    flags,
+    agents,
+    meta: {
+      skillCount: skills.length,
+      flagCount: flags.length,
+      agentCount: agents.length,
+    },
+  };
+}
+
+function watchClaudeFolder() {
+  const watchPaths = [
+    path.join(CLAUDE_SC_DIR, '*.md'),
+    CLAUDE_FLAGS_FILE,
+    path.join(CLAUDE_AGENTS_DIR, '*.md'),
+  ];
+
+  const watcher = chokidar.watch(watchPaths, {
+    persistent: true,
+    ignoreInitial: true,
+  });
+
+  let debounceTimer = null;
+  const rescan = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      try {
+        claudeScanCache = scanClaudeFolder();
+        claudeScanTimestamp = Date.now();
+        io.emit('claudeScanUpdated', { updatedAt: new Date().toISOString() });
+        console.log(`[claude-scan] Rescanned: ${claudeScanCache.meta.skillCount} skills, ${claudeScanCache.meta.flagCount} flags, ${claudeScanCache.meta.agentCount} agents`);
+      } catch (e) {
+        console.error('[claude-scan] Rescan error:', e.message);
+      }
+    }, 2000);
+  };
+
+  watcher.on('add', rescan);
+  watcher.on('change', rescan);
+  watcher.on('unlink', rescan);
+  console.log(`[claude-scan] Watching .claude skills, flags, agents`);
 }
 
 // ── Agent Team Monitoring ──
@@ -778,6 +949,18 @@ server.listen(PORT, HOST, () => {
   watchEventsFile();
   watchTranscriptFiles();
   watchTeamDirectories();
+  watchClaudeFolder();
+
+  // Initial .claude scan (delayed to let file system settle)
+  setTimeout(() => {
+    try {
+      claudeScanCache = scanClaudeFolder();
+      claudeScanTimestamp = Date.now();
+      console.log(`[claude-scan] Initial scan: ${claudeScanCache.meta.skillCount} skills, ${claudeScanCache.meta.flagCount} flags, ${claudeScanCache.meta.agentCount} agents`);
+    } catch (e) {
+      console.error('[claude-scan] Initial scan error:', e.message);
+    }
+  }, 3000);
 
   // Broadcast tmux status every 5 seconds
   let lastBroadcastStatus = null;

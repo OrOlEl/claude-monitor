@@ -30,14 +30,14 @@ const typeColors = {
   req_end: 'text-argo-muted',
 };
 
-export function ActivityLog({ events = [] }) {
+export function ActivityLog({ events = [], autoFollow = true }) {
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (autoFollow && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [events]);
+  }, [events, autoFollow]);
 
   if (events.length === 0) {
     return (

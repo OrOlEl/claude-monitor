@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, AlertCircle, Zap, Clock, Terminal, WifiOff } from 'lucide-react';
 
-export function ChatInput({ socket, sessionId, disabled = false }) {
+export function ChatInput({ socket, sessionId, disabled = false, commandPrefix = null, commandSuffix = null }) {
   const [command, setCommand] = useState('');
   const [toastType, setToastType] = useState(null);
   const [tmuxStatus, setTmuxStatus] = useState({ available: false, target: null, idle: false });
@@ -64,7 +64,8 @@ export function ChatInput({ socket, sessionId, disabled = false }) {
     e?.preventDefault();
     if (!command.trim() || isDisabled) return;
     const trimmed = command.trim();
-    socket.emit('sendCommand', { sessionId: sessionId || 'current', command: trimmed });
+    const finalCommand = [commandPrefix, trimmed, commandSuffix].filter(Boolean).join('\n');
+    socket.emit('sendCommand', { sessionId: sessionId || 'current', command: finalCommand });
     setHistory((prev) => {
       const filtered = prev.filter((h) => h !== trimmed);
       return [trimmed, ...filtered].slice(0, 50);
