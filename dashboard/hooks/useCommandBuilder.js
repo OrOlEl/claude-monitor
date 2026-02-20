@@ -21,7 +21,7 @@ function saveSetting(key, value) {
   }
 }
 
-export function useCommandBuilder() {
+export function useCommandBuilder(socket) {
   // Available data from server scan
   const [availableSkills, setAvailableSkills] = useState([]);
   const [availableFlags, setAvailableFlags] = useState([]);
@@ -34,6 +34,13 @@ export function useCommandBuilder() {
   const [selectedAgents, setSelectedAgents] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Preset state
+  const [presets, setPresets] = useState({});
+  const [activePresetId, setActivePresetId] = useState(null);
+  const [isPresetModified, setIsPresetModified] = useState(false);
+  const [editingPresetId, setEditingPresetId] = useState(null);
+  const [isCreatingPreset, setIsCreatingPreset] = useState(false);
 
   // SSR-safe: load from localStorage after mount
   useEffect(() => {
@@ -128,6 +135,68 @@ export function useCommandBuilder() {
 
   const hasSelections = !!(selectedSkill || selectedFlags.length || selectedModels.length || selectedAgents.length);
 
+  // Preset functions
+  const loadPresets = useCallback((data) => {
+    setPresets(data || {});
+  }, []);
+
+  const applyPreset = useCallback((id) => {
+    if (activePresetId === id) {
+      setActivePresetId(null);
+      setIsPresetModified(false);
+      return;
+    }
+    const p = presets[id];
+    if (!p) return;
+    setSelectedSkill(p.skill || null);
+    setSelectedFlags(p.flags || []);
+    setSelectedModels(p.models || []);
+    setSelectedAgents(p.agents || []);
+    setActivePresetId(id);
+    setIsPresetModified(false);
+  }, [activePresetId, presets]);
+
+  const savePreset = useCallback((name) => {
+    if (!socket) return;
+    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9가-힣-]/g, '').replace(/-+/g, '-');
+    socket.emit('savePreset', { id, name, skill: selectedSkill, flags: selectedFlags, models: selectedModels, agents: selectedAgents });
+    setActivePresetId(id);
+    setIsPresetModified(false);
+    setIsCreatingPreset(false);
+  }, [socket, selectedSkill, selectedFlags, selectedModels, selectedAgents]);
+
+  const updatePreset = useCallback((id, updates) => {
+    if (!socket) return;
+    socket.emit('updatePreset', { id, ...updates });
+    setEditingPresetId(null);
+    setIsPresetModified(false);
+  }, [socket]);
+
+  const deletePreset = useCallback((id) => {
+    if (!socket) return;
+    socket.emit('deletePreset', { id });
+    if (activePresetId === id) {
+      setActivePresetId(null);
+      setIsPresetModified(false);
+    }
+    setEditingPresetId(null);
+  }, [socket, activePresetId]);
+
+  // Preset modification detection
+  const checkPresetModified = useCallback((skill, flags, models, agents) => {
+    if (!activePresetId || !presets[activePresetId]) { setIsPresetModified(false); return; }
+    const p = presets[activePresetId];
+    const modified = skill !== (p.skill || null) ||
+      JSON.stringify([...flags].sort()) !== JSON.stringify([...(p.flags || [])].sort()) ||
+      JSON.stringify([...models].sort()) !== JSON.stringify([...(p.models || [])].sort()) ||
+      JSON.stringify([...agents].sort()) !== JSON.stringify([...(p.agents || [])].sort());
+    setIsPresetModified(modified);
+  }, [activePresetId, presets]);
+
+  useEffect(() => {
+    checkPresetModified(selectedSkill, selectedFlags, selectedModels, selectedAgents);
+  }, [selectedSkill, selectedFlags, selectedModels, selectedAgents, checkPresetModified]);
+
   return {
     // Available data
     availableSkills,
@@ -152,5 +221,19 @@ export function useCommandBuilder() {
     commandSuffix,
     // Reset
     clearAll,
+    // Preset state
+    presets,
+    activePresetId,
+    isPresetModified,
+    editingPresetId,
+    isCreatingPreset,
+    // Preset functions
+    loadPresets,
+    applyPreset,
+    savePreset,
+    updatePreset,
+    deletePreset,
+    setEditingPresetId,
+    setIsCreatingPreset,
   };
 }

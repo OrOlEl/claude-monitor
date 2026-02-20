@@ -10,13 +10,14 @@ import { useCommandBuilder } from '../hooks/useCommandBuilder';
 
 export function RightPanel({ conversations, events, socket, sessionId, autoFollow = true, scrollTrigger = 0 }) {
   const [activeTab, setActiveTab] = useState('conversation');
-  const commandBuilder = useCommandBuilder();
+  const commandBuilder = useCommandBuilder(socket);
 
   useEffect(() => {
     if (!socket) return;
 
     const onInit = (data) => {
       if (data.claudeScan) commandBuilder.loadScanData(data.claudeScan);
+      if (data.presets) commandBuilder.loadPresets(data.presets);
     };
     const onClaudeScanUpdated = async () => {
       try {
@@ -30,13 +31,18 @@ export function RightPanel({ conversations, events, socket, sessionId, autoFollo
         // ignore fetch errors
       }
     };
+    const onPresetsUpdated = (data) => {
+      commandBuilder.loadPresets(data);
+    };
 
     socket.on('init', onInit);
     socket.on('claudeScanUpdated', onClaudeScanUpdated);
+    socket.on('presetsUpdated', onPresetsUpdated);
 
     return () => {
       socket.off('init', onInit);
       socket.off('claudeScanUpdated', onClaudeScanUpdated);
+      socket.off('presetsUpdated', onPresetsUpdated);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);

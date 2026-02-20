@@ -91,18 +91,23 @@ export default function Home() {
   const treeData = getTreeData();
   const liveStatus = getLiveStatus();
 
-  // Find the deepest running node inside the tree
+  // Find the deepest running node inside the tree (3-tier fallback)
   const findLatestRunningNode = useCallback(() => {
     if (!mainRef.current) return null;
-    // Find all running nodes (tool/agent/skill level, not req/task containers)
+    // 1. Running nodes (tool/agent/skill level, including team agent markers)
     const runningNodes = mainRef.current.querySelectorAll('[data-node-status="running"]');
     if (runningNodes.length > 0) {
-      // Return the last one (deepest/most recent in DOM order)
       return runningNodes[runningNodes.length - 1];
     }
-    // Fallback: running RequestCard
+    // 2. Running RequestCard container
     const runningCard = mainRef.current.querySelector('[data-status="running"]');
-    return runningCard;
+    if (runningCard) return runningCard;
+    // 3. Last node of any status (most recent completed activity)
+    const allNodes = mainRef.current.querySelectorAll('[data-node-status]');
+    if (allNodes.length > 0) {
+      return allNodes[allNodes.length - 1];
+    }
+    return null;
   }, []);
 
   // Keep ref in sync with state so rAF callbacks check the latest value
@@ -128,16 +133,26 @@ export default function Home() {
   }, [events.length, autoFollow, mainTab, findLatestRunningNode]);
 
   const scrollToLatest = useCallback(() => {
-    if (mainRef.current) {
+    setScrollTrigger(t => t + 1);
+    requestAnimationFrame(() => {
+      if (!mainRef.current) return;
       const target = findLatestRunningNode();
       if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
         mainRef.current.scrollTop = mainRef.current.scrollHeight;
       }
-    }
-    setScrollTrigger(t => t + 1);
+    });
   }, [findLatestRunningNode]);
+
+  // Scroll when auto-follow is toggled ON
+  const prevAutoFollowState = useRef(autoFollow);
+  useEffect(() => {
+    if (autoFollow && !prevAutoFollowState.current) {
+      scrollToLatest();
+    }
+    prevAutoFollowState.current = autoFollow;
+  }, [autoFollow, scrollToLatest]);
 
   const projectSessions = selectedProject
     ? getProjectsWithSessions().find(p => p.name === selectedProject)?.sessions || []

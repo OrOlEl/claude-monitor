@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
+const os = require('os');
 const uuidv4 = () => crypto.randomUUID();
 
 const TMUX_SESSION = process.env.TMUX_SESSION || 'claude';
@@ -25,6 +26,18 @@ const io = new Server(server, {
 
 app.use(express.json());
 
+// CORS for REST API (same origins as Socket.IO)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 const PORT = process.env.PORT || 3847;
 const EVENTS_FILE = process.env.EVENTS_FILE || path.join(process.env.HOME, '.claude-monitor', 'events.jsonl');
 const COMMANDS_FILE = process.env.COMMANDS_FILE || path.join(process.env.HOME, '.claude-monitor', 'commands.jsonl');
@@ -32,10 +45,37 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.env.HOME, '.c
 const TEAMS_DIR = path.join(process.env.HOME, '.claude', 'teams');
 const TEAM_TASKS_DIR = path.join(process.env.HOME, '.claude', 'tasks');
 
+const MONITOR_DIR = path.join(process.env.HOME, '.claude-monitor');
 const CLAUDE_DIR = path.join(process.env.HOME, '.claude');
 const CLAUDE_SC_DIR = path.join(CLAUDE_DIR, 'commands', 'sc');
 const CLAUDE_FLAGS_FILE = path.join(CLAUDE_DIR, 'FLAGS.md');
 const CLAUDE_AGENTS_DIR = path.join(CLAUDE_DIR, 'agents');
+
+class ConfigManager {
+  constructor(filePath) {
+    this.filePath = filePath;
+    this.data = this._load();
+  }
+  _load() {
+    try {
+      return JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+    } catch (e) {
+      return { version: 1, presets: {} };
+    }
+  }
+  _save() {
+    try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+    } catch (e) {}
+  }
+  getPresets() { return this.data.presets; }
+  setPreset(id, preset) { this.data.presets[id] = preset; this._save(); }
+  deletePreset(id) { delete this.data.presets[id]; this._save(); }
+}
+
+const configManager = new ConfigManager(path.join(MONITOR_DIR, 'config.json'));
 
 let claudeScanCache = null;
 let claudeScanTimestamp = 0;
@@ -179,6 +219,39 @@ app.get('/api/claude/scan', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to scan .claude folder' });
   }
+});
+
+app.get('/api/presets', (req, res) => {
+  res.json(configManager.getPresets());
+});
+
+app.post('/api/presets', (req, res) => {
+  const { id, name, skill, flags, models, agents, order } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const preset = { id: presetId, name, skill, flags, models, agents, order, updatedAt: new Date().toISOString() };
+  configManager.setPreset(presetId, preset);
+  io.emit('presetsUpdated', configManager.getPresets());
+  res.json({ success: true, preset });
+});
+
+app.put('/api/presets/:id', (req, res) => {
+  const { id } = req.params;
+  const presets = configManager.getPresets();
+  if (!presets[id]) return res.status(404).json({ error: 'Preset not found' });
+  const updated = { ...presets[id], ...req.body, id, updatedAt: new Date().toISOString() };
+  configManager.setPreset(id, updated);
+  io.emit('presetsUpdated', configManager.getPresets());
+  res.json({ success: true, preset: updated });
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+  const { id } = req.params;
+  const presets = configManager.getPresets();
+  if (!presets[id]) return res.status(404).json({ error: 'Preset not found' });
+  configManager.deletePreset(id);
+  io.emit('presetsUpdated', configManager.getPresets());
+  res.json({ success: true });
 });
 
 function loadInitialEvents() {
@@ -487,6 +560,7 @@ io.on('connection', (socket) => {
     tmux: getTmuxStatus(),
     commandHistory: commandHistory,
     claudeScan: claudeScanCache,
+    presets: configManager.getPresets(),
   });
   socket.on('getCommandHistory', () => {
     socket.emit('commandHistory', commandHistory);
@@ -541,6 +615,28 @@ io.on('connection', (socket) => {
     } catch (error) {
       socket.emit('commandError', { error: 'Failed to queue command' });
     }
+  });
+  // Preset CRUD via Socket.IO (avoids CORS issues with REST API)
+  socket.on('savePreset', (data) => {
+    const { id, name, skill, flags, models, agents } = data || {};
+    if (!name) return socket.emit('presetError', { error: 'name is required' });
+    const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const preset = { id: presetId, name, skill, flags, models, agents, updatedAt: new Date().toISOString() };
+    configManager.setPreset(presetId, preset);
+    io.emit('presetsUpdated', configManager.getPresets());
+  });
+  socket.on('updatePreset', (data) => {
+    const { id, ...updates } = data || {};
+    if (!id || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
+    const updated = { ...configManager.getPresets()[id], ...updates, id, updatedAt: new Date().toISOString() };
+    configManager.setPreset(id, updated);
+    io.emit('presetsUpdated', configManager.getPresets());
+  });
+  socket.on('deletePreset', (data) => {
+    const { id } = data || {};
+    if (!id || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
+    configManager.deletePreset(id);
+    io.emit('presetsUpdated', configManager.getPresets());
   });
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`);

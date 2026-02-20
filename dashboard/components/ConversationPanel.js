@@ -209,13 +209,17 @@ export function ConversationPanel({ messages = [], sessionId, autoFollow = true,
 
   useEffect(() => {
     if (autoFollow && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
     }
   }, [messages, autoFollow]);
 
   useEffect(() => {
     if (scrollTrigger > 0 && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
     }
   }, [scrollTrigger]);
 

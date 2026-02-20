@@ -1318,7 +1318,7 @@ function LadderView({ reqNode, team, teamMessages }) {
                   {columns.map((_, ci) => (
                     <div key={ci} className="flex justify-center">
                       {ci === entry.colIdx ? (
-                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9px] font-mono ${
+                        <div data-node-status={a.status} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9px] font-mono ${
                           isRunning ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' :
                           a.status === 'completed' ? 'border-green-500/30 bg-green-500/5 text-green-400' :
                           a.status === 'error' ? 'border-red-500/30 bg-red-500/5 text-red-400' :

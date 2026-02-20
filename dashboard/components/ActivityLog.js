@@ -35,13 +35,17 @@ export function ActivityLog({ events = [], autoFollow = true, scrollTrigger = 0 
 
   useEffect(() => {
     if (autoFollow && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
     }
   }, [events, autoFollow]);
 
   useEffect(() => {
     if (scrollTrigger > 0 && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      });
     }
   }, [scrollTrigger]);
 
