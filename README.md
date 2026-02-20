@@ -2,7 +2,7 @@
 
 Real-time monitoring dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Captures every request, tool call, agent spawn, and model thinking event via Claude Code's hook system and visualizes them as an interactive Argo CD-style execution tree.
 
-![Version](https://img.shields.io/badge/version-0.0.2-blue)
+![Version](https://img.shields.io/badge/version-0.0.3-blue)
 ![Architecture: Hooks → JSONL → Server → WebSocket → Dashboard](https://img.shields.io/badge/stack-Next.js_|_Express_|_Socket.IO-blue)
 
 ---
@@ -411,26 +411,43 @@ Dashboard (Next.js + Zustand, :3848)
 - **Session Grid** — Track multiple Claude Code sessions across projects
 - **Team Monitor** — Visualize Agent Teams structure, members, and task progress
 - **Command Injection** — Send commands from the dashboard that get injected into the next prompt
-- **Conversation Panel** — Browse message history with inline tool call expansion
+- **Command Builder** — Select skills, flags, models, and agents via toggle UI to compose commands
+- **Conversation Panel** — Browse message history with inline tool call expansion and markdown rendering
+- **Subagent Identification** — Color-coded badges distinguish team member messages in conversations
+- **Activity Log** — Real-time event stream (tool calls, agent spawns, routing, compaction)
+- **Auto-follow & Scroll-to-latest** — Tracks running nodes in tree view and latest messages in panels
+- **Layout Controls** — Swap panel position, toggle vertical/horizontal layout, resize panels via drag
+- **Connection Status** — Live WebSocket connection indicator with auto-reconnect
 
 ## Project Structure
 
 ```
 claude-monitor/
 ├── server/              # Node.js event relay server
-│   └── src/index.js     # Express + Socket.IO + file watchers
+│   └── src/index.js     # Express + Socket.IO + file watchers + REST API
 ├── dashboard/           # Next.js monitoring UI
 │   ├── app/             # Next.js app router
 │   ├── components/      # React components
 │   │   ├── HorizontalTree.js    # Main execution tree
-│   │   ├── ConversationPanel.js # Message history
+│   │   ├── ConversationPanel.js # Message history + subagent identification
+│   │   ├── RightPanel.js        # Tabbed side panel (conversation/activity)
+│   │   ├── ActivityLog.js       # Real-time event stream
+│   │   ├── ChatInput.js         # Command input field
+│   │   ├── CommandBuilder.js    # Skill/flag/model/agent selector UI
+│   │   ├── MarkdownText.js      # Lightweight markdown renderer
+│   │   ├── ConnectionStatus.js  # WebSocket connection indicator
 │   │   ├── ProjectsGrid.js     # Session/project overview
-│   │   ├── LiveStatusBar.js    # Top status indicators
-│   │   └── ...
+│   │   ├── SessionList.js      # Session list per project
+│   │   ├── SessionDetail.js    # Individual session detail view
+│   │   └── LiveStatusBar.js    # Top status indicators
 │   ├── stores/          # Zustand state management
 │   │   ├── eventStore.js    # Event processing & tree builder
 │   │   └── sessionStore.js  # Session/project tracking
-│   └── hooks/           # React hooks (useSocket)
+│   ├── hooks/           # React hooks
+│   │   ├── useSocket.js         # Socket.IO connection hook
+│   │   └── useCommandBuilder.js # Command builder state management
+│   └── utils/
+│       └── toolNames.js     # Tool name shortening & detail preview
 ├── hooks/               # Claude Code hook scripts
 │   ├── prompt-inject.sh # Command injection via UserPromptSubmit
 │   ├── req-tracker.sh   # Request start tracking
@@ -454,6 +471,20 @@ claude-monitor/
 | `compaction` | Transcript parsing | Context window compaction |
 | `task_plan` | collector.sh | Task create/update events |
 | `team_lifecycle` | Server file watcher | Team create/delete |
+| `team_message` | collector.sh | Team member send/broadcast messages |
+| `session_end` | req-end.sh | Session termination |
+
+## Socket.IO Events
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `init` | Server → Client | Initial state (events, conversations, sessions, claudeScan) |
+| `event` | Server → Client | New event from JSONL file |
+| `conversation` | Server → Client | New conversation message from transcript |
+| `sessions` | Server → Client | Updated session list |
+| `teamsUpdated` | Server → Client | Team config changes |
+| `claudeScanUpdated` | Server → Client | Skills/flags/models/agents changed |
+| `sendCommand` | Client → Server | Send command to Claude Code |
 
 ## How It Works
 
@@ -474,7 +505,18 @@ claude-monitor/
 | `ALLOWED_ORIGINS` | `http://localhost:3848` | Comma-separated CORS origins |
 | `EVENTS_FILE` | `~/.claude-monitor/events.jsonl` | Event log path |
 | `COMMANDS_FILE` | `~/.claude-monitor/commands.jsonl` | Command queue path |
+| `PROJECTS_DIR` | `~/.claude/projects` | Claude Code projects directory |
 | `NEXT_PUBLIC_WS_URL` | `http://localhost:3847` | Server URL for dashboard |
+
+## REST API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Server health check |
+| `/api/claude/scan` | GET | Scan `.claude/` for available skills, flags, models, agents |
+| `/api/tmux/status` | GET | Check tmux session and idle state |
+| `/api/tmux-idle` | POST | Mark tmux session as idle |
+| `/api/tmux-busy` | POST | Mark tmux session as busy |
 
 ## What Gets Modified
 

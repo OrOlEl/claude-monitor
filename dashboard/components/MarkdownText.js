@@ -9,6 +9,12 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function isSafeUrl(url) {
+  const decoded = url.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n)).trim();
+  const lower = decoded.toLowerCase().replace(/[\s\x00-\x1f]/g, '');
+  return /^(https?:\/\/|mailto:|#|\/[^/])/.test(lower);
+}
+
 function renderInline(text) {
   let html = escapeHtml(text);
   // Bold: **text** or __text__
@@ -18,8 +24,11 @@ function renderInline(text) {
   html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em class="italic">$1</em>');
   // Inline code: `code`
   html = html.replace(/`([^`]+)`/g, '<code class="bg-argo-bg px-1.5 py-0.5 rounded text-xs font-mono text-argo-accent">$1</code>');
-  // Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-argo-accent hover:underline" target="_blank" rel="noopener">$1</a>');
+  // Links: [text](url) — only allow safe protocols
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+    if (!isSafeUrl(url)) return label;
+    return `<a href="${url}" class="text-argo-accent hover:underline" target="_blank" rel="noopener">${label}</a>`;
+  });
   return html;
 }
 

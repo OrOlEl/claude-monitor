@@ -40,6 +40,7 @@ export default function Home() {
   const [, setTick] = useState(0);
   const [autoFollow, setAutoFollow] = useState(true);
   const autoFollowRef = useRef(true);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
   const [layoutSwapped, setLayoutSwapped] = useState(false);
   const [layoutVertical, setLayoutVertical] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -127,13 +128,15 @@ export default function Home() {
   }, [events.length, autoFollow, mainTab, findLatestRunningNode]);
 
   const scrollToLatest = useCallback(() => {
-    if (!mainRef.current) return;
-    const target = findLatestRunningNode();
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      mainRef.current.scrollTop = mainRef.current.scrollHeight;
+    if (mainRef.current) {
+      const target = findLatestRunningNode();
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        mainRef.current.scrollTop = mainRef.current.scrollHeight;
+      }
     }
+    setScrollTrigger(t => t + 1);
   }, [findLatestRunningNode]);
 
   const projectSessions = selectedProject
@@ -320,6 +323,7 @@ export default function Home() {
                 socket={socket}
                 sessionId={activeSessionId}
                 autoFollow={autoFollow}
+                scrollTrigger={scrollTrigger}
               />
             </aside>
           </>

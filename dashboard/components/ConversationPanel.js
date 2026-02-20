@@ -201,19 +201,23 @@ function MessageBubble({ message, index, messages, mainSessionId, sessionAgentMa
   );
 }
 
-export function ConversationPanel({ messages = [], sessionId, autoFollow = true }) {
+export function ConversationPanel({ messages = [], sessionId, autoFollow = true, scrollTrigger = 0 }) {
   const scrollRef = useRef(null);
-  const prevMessagesLengthRef = useRef(messages.length);
   const mainSessionId = useEventStore(s => s.sessionId);
   const getSessionAgentMap = useEventStore(s => s.getSessionAgentMap);
   const sessionAgentMap = useMemo(() => getSessionAgentMap(), [getSessionAgentMap, messages]);
 
   useEffect(() => {
-    if (autoFollow && scrollRef.current && messages.length > prevMessagesLengthRef.current) {
+    if (autoFollow && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-    prevMessagesLengthRef.current = messages.length;
   }, [messages, autoFollow]);
+
+  useEffect(() => {
+    if (scrollTrigger > 0 && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [scrollTrigger]);
 
   if (!messages || messages.length === 0) {
     return (

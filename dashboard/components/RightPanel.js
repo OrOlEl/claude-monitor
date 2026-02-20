@@ -8,7 +8,7 @@ import { ChatInput } from './ChatInput';
 import { CommandBuilder } from './CommandBuilder';
 import { useCommandBuilder } from '../hooks/useCommandBuilder';
 
-export function RightPanel({ conversations, events, socket, sessionId, autoFollow = true }) {
+export function RightPanel({ conversations, events, socket, sessionId, autoFollow = true, scrollTrigger = 0 }) {
   const [activeTab, setActiveTab] = useState('conversation');
   const commandBuilder = useCommandBuilder();
 
@@ -69,7 +69,7 @@ export function RightPanel({ conversations, events, socket, sessionId, autoFollo
         {activeTab === 'conversation' && (
           <>
             <div className="flex-1 overflow-hidden">
-              <ConversationPanel messages={conversations} sessionId={sessionId} autoFollow={autoFollow} />
+              <ConversationPanel messages={conversations} sessionId={sessionId} autoFollow={autoFollow} scrollTrigger={scrollTrigger} />
             </div>
             <div className="border-t border-argo-border p-3">
               <CommandBuilder {...commandBuilder} />
@@ -83,7 +83,7 @@ export function RightPanel({ conversations, events, socket, sessionId, autoFollo
           </>
         )}
         {activeTab === 'activity' && (
-          <ActivityLog events={events} autoFollow={autoFollow} />
+          <ActivityLog events={events} autoFollow={autoFollow} scrollTrigger={scrollTrigger} />
         )}
       </div>
     </div>
