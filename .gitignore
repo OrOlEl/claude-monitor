@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.idea/
+*.log
+.env
+.env.*
+.DS_Store
+*.local
+dist/
+build/
+.docker/
+docker-compose.override.yml
