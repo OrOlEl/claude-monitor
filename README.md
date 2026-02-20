@@ -371,6 +371,46 @@ claude-monitor/
 | `COMMANDS_FILE` | `~/.claude-monitor/commands.jsonl` | Command queue path |
 | `NEXT_PUBLIC_WS_URL` | `http://localhost:3847` | Server URL for dashboard |
 
+## What Gets Modified
+
+This project modifies files **outside** the project directory. Here's the complete list:
+
+### `~/.claude/settings.json` — Edited (merge)
+
+7 hook entries are **appended** to the `hooks` object. No existing settings are overwritten.
+
+| Hook Event | Script Added | Purpose |
+|------------|-------------|---------|
+| `UserPromptSubmit` | `hooks/prompt-inject.sh` | Injects dashboard commands into prompts |
+| `UserPromptSubmit` | `hooks/req-tracker.sh` | Records request start events |
+| `PreToolUse` | `collector/collector.sh` | Records tool invocation start |
+| `PostToolUse` | `collector/collector.sh` | Records tool invocation end |
+| `SubagentStart` | `collector/subagent-tracker.sh` | Records agent spawn |
+| `SubagentStop` | `collector/subagent-tracker.sh` | Records agent completion |
+| `Stop` | `hooks/req-end.sh` | Records request end events |
+
+### `~/.claude/settings.json.backup` — Created
+
+A backup copy of `settings.json` taken before modification. Can be safely deleted after verifying the install.
+
+### `~/.claude-monitor/` — Created (new directory)
+
+| File | Created By | Purpose |
+|------|-----------|---------|
+| `events.jsonl` | Hook scripts | Append-only event log (all captured events) |
+| `commands.jsonl` | Server / dashboard | Command queue (dashboard → Claude Code) |
+| `collector-debug.log` | `collector.sh` | Debug log for hook scripts |
+
+### `~/.claude/` — Read-only access
+
+The server **reads but never writes** to these directories:
+
+| Path | Access | Purpose |
+|------|--------|---------|
+| `~/.claude/projects/` | Read | Finds transcript files for thinking/response extraction |
+| `~/.claude/teams/` | Read | Watches for Agent Teams config changes |
+| `~/.claude/tasks/` | Read | Watches for task list updates |
+
 ## Hook Safety
 
 All hook scripts use a safety wrapper to guarantee valid JSON output on any exit path, preventing Claude Code API errors:
