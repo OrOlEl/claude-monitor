@@ -2,7 +2,7 @@
 
 Real-time monitoring dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Captures every request, tool call, agent spawn, and model thinking event via Claude Code's hook system and visualizes them as an interactive Argo CD-style execution tree.
 
-![Version](https://img.shields.io/badge/version-0.0.3-blue)
+![Version](https://img.shields.io/badge/version-0.0.4-blue)
 ![Architecture: Hooks → JSONL → Server → WebSocket → Dashboard](https://img.shields.io/badge/stack-Next.js_|_Express_|_Socket.IO-blue)
 
 ---
@@ -424,6 +424,7 @@ Dashboard (Next.js + Zustand, :3848)
 - **Team Monitor** — Visualize Agent Teams structure, members, and task progress
 - **Command Injection** — Send commands from the dashboard that get injected into the next prompt
 - **Command Builder** — Select skills, flags, models, and agents via toggle UI to compose commands
+- **Preset System** — Save, load, overwrite, and delete command builder presets (persisted via Socket.IO)
 - **Conversation Panel** — Browse message history with inline tool call expansion and markdown rendering
 - **Subagent Identification** — Color-coded badges distinguish team member messages in conversations
 - **Activity Log** — Real-time event stream (tool calls, agent spawns, routing, compaction)
@@ -497,6 +498,10 @@ claude-monitor/
 | `teamsUpdated` | Server → Client | Team config changes |
 | `claudeScanUpdated` | Server → Client | Skills/flags/models/agents changed |
 | `sendCommand` | Client → Server | Send command to Claude Code |
+| `presetsUpdated` | Server → Client | Preset config changes |
+| `savePreset` | Client → Server | Create or save a preset |
+| `updatePreset` | Client → Server | Update (overwrite) a preset |
+| `deletePreset` | Client → Server | Delete a preset |
 
 ## How It Works
 
@@ -529,6 +534,10 @@ claude-monitor/
 | `/api/tmux/status` | GET | Check tmux session and idle state |
 | `/api/tmux-idle` | POST | Mark tmux session as idle |
 | `/api/tmux-busy` | POST | Mark tmux session as busy |
+| `/api/presets` | GET | List all command builder presets |
+| `/api/presets` | POST | Create or update a preset |
+| `/api/presets/:id` | PUT | Update a preset by ID |
+| `/api/presets/:id` | DELETE | Delete a preset by ID |
 
 ## What Gets Modified
 
