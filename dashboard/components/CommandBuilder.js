@@ -307,7 +307,7 @@ export function CommandBuilder({
                 onCancel={() => setIsCreatingPreset(false)}
               />
             )}
-            {editingPresetId && presets[editingPresetId] && (
+            {editingPresetId !== null && presets[editingPresetId] && (
               <EditPresetForm
                 preset={presets[editingPresetId]}
                 presetId={editingPresetId}

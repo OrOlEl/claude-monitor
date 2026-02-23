@@ -158,7 +158,7 @@ export function useCommandBuilder(socket) {
 
   const savePreset = useCallback((name) => {
     if (!socket) return;
-    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9가-힣-]/g, '').replace(/-+/g, '-');
+    const id = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9ㄱ-ㅎㅏ-ㅣ가-힣-]/g, '').replace(/-+/g, '-') || `preset-${Date.now()}`;
     socket.emit('savePreset', { id, name, skill: selectedSkill, flags: selectedFlags, models: selectedModels, agents: selectedAgents });
     setActivePresetId(id);
     setIsPresetModified(false);

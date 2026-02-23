@@ -228,7 +228,7 @@ app.get('/api/presets', (req, res) => {
 app.post('/api/presets', (req, res) => {
   const { id, name, skill, flags, models, agents, order } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\uAC00-\uD7A3\u3131-\u314E\u314F-\u3163-]/g, '').replace(/-+/g, '-') || `preset-${Date.now()}`;
   const preset = { id: presetId, name, skill, flags, models, agents, order, updatedAt: new Date().toISOString() };
   configManager.setPreset(presetId, preset);
   io.emit('presetsUpdated', configManager.getPresets());
@@ -620,21 +620,21 @@ io.on('connection', (socket) => {
   socket.on('savePreset', (data) => {
     const { id, name, skill, flags, models, agents } = data || {};
     if (!name) return socket.emit('presetError', { error: 'name is required' });
-    const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const presetId = id || name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\uAC00-\uD7A3\u3131-\u314E\u314F-\u3163-]/g, '').replace(/-+/g, '-') || `preset-${Date.now()}`;
     const preset = { id: presetId, name, skill, flags, models, agents, updatedAt: new Date().toISOString() };
     configManager.setPreset(presetId, preset);
     io.emit('presetsUpdated', configManager.getPresets());
   });
   socket.on('updatePreset', (data) => {
     const { id, ...updates } = data || {};
-    if (!id || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
+    if (id == null || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
     const updated = { ...configManager.getPresets()[id], ...updates, id, updatedAt: new Date().toISOString() };
     configManager.setPreset(id, updated);
     io.emit('presetsUpdated', configManager.getPresets());
   });
   socket.on('deletePreset', (data) => {
     const { id } = data || {};
-    if (!id || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
+    if (id == null || !configManager.getPresets()[id]) return socket.emit('presetError', { error: 'Preset not found' });
     configManager.deletePreset(id);
     io.emit('presetsUpdated', configManager.getPresets());
   });
