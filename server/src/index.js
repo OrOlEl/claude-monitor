@@ -483,35 +483,9 @@ function watchTranscriptFiles() {
       path: filePath, lastPosition: 0, lastRead: Date.now(),
       sessionId: extractSessionIdFromPath(filePath)
     });
-    const entries = readNewTranscriptLines(filePath);
-    const tracking = transcriptTracking.get(filePath);
-    const sessionId = tracking?.sessionId || extractSessionIdFromPath(filePath);
-
-    // Extract thinking from existing transcript on startup
-    const thinkingEvents = extractThinkingEvents(entries, sessionId);
-    for (const te of thinkingEvents) {
-      events.push(te);
-      if (events.length > MAX_EVENTS) events.shift();
-    }
-
-    // Detect compaction in initial load
-    const initCompactionEvents = extractCompactionEvents(entries, sessionId);
-    for (const ce of initCompactionEvents) {
-      events.push(ce);
-      if (events.length > MAX_EVENTS) events.shift();
-    }
-
-    for (const entry of entries) {
-      const conversationEvent = {
-        timestamp: Date.now(),
-        transcriptPath: filePath,
-        sessionId,
-        ...entry
-      };
-      conversationHistory.push(conversationEvent);
-      if (conversationHistory.length > MAX_CONVERSATION_HISTORY) conversationHistory.shift();
-    }
-    console.log(`New transcript detected: ${path.basename(filePath)} (${entries.length} entries, ${thinkingEvents.length} thinking blocks)`);
+    // Read file to advance lastPosition to end — skip populating conversationHistory
+    // to avoid hundreds of transcript files overflowing the 500-entry buffer
+    readNewTranscriptLines(filePath);
   });
 
   console.log(`Watching transcripts: ${PROJECTS_DIR}/**/*.jsonl`);
@@ -554,7 +528,7 @@ io.on('connection', (socket) => {
     return conv;
   });
   socket.emit('init', {
-    events: events.slice(-100),
+    events: events,
     conversations: conversationsWithSessionId,
     teams: getAllTeams(),
     tmux: getTmuxStatus(),

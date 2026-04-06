@@ -87,12 +87,13 @@ elif tool_name in ('Grep', 'Glob'):
     pattern = tool_input.get('pattern', '') or ''
     path = tool_input.get('path', '') or ''
     detail = f'{pattern}  {path}'.strip()
-elif tool_name == 'Task':
+elif tool_name in ('Task', 'Agent'):
     desc = tool_input.get('description', '') or ''
     agent = tool_input.get('subagent_type', '') or ''
     model = tool_input.get('model', '') or ''
+    bg = tool_input.get('run_in_background', False)
     prompt = (tool_input.get('prompt', '') or '')[:300]
-    parts = [p for p in [desc, f'agent: {agent}' if agent else '', f'model: {model}' if model else '', prompt] if p]
+    parts = [p for p in [desc, f'agent: {agent}' if agent else '', f'model: {model}' if model else '', 'background' if bg else '', prompt] if p]
     detail = '\n'.join(parts)
 elif tool_name == 'Skill':
     skill = tool_input.get('skill', '') or ''
@@ -133,11 +134,12 @@ if is_post:
     output_summary = (str(tool_output) or '')[:300]
 
 # Determine event type
-if tool_name == 'Task':
+if tool_name in ('Task', 'Agent'):
     subagent = tool_input.get('subagent_type', tool_input.get('description', ''))
     model = tool_input.get('model', '')
     team_name = tool_input.get('team_name', '')
     agent_name = tool_input.get('name', '')
+    background = tool_input.get('run_in_background', False)
     # Extract flags from prompt for team agents
     prompt_text = tool_input.get('prompt', '')
     prompt_flags = []
@@ -158,6 +160,8 @@ if tool_name == 'Task':
         event['team_name'] = team_name
     if agent_name:
         event['agent_name'] = agent_name
+    if background:
+        event['background'] = True
     if prompt_flags:
         event['flags'] = ','.join(prompt_flags)
     if output_summary:

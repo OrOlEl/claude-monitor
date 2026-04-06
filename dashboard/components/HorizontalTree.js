@@ -228,6 +228,10 @@ function ArgoBox({ node }) {
                 })}
               </span>
             )}
+            {/* Background agent indicator */}
+            {node.type === 'agent' && node.background && (
+              <span className="text-[7px] px-1 py-0.5 rounded font-bold text-indigo-300 bg-indigo-500/15">BG</span>
+            )}
             {/* SuperClaude agent indicator */}
             {node.type === 'agent' && SC_AGENTS[node.agent_type] && (
               <span className={`text-[7px] px-1 py-0.5 rounded font-bold flex items-center gap-0.5 ${SC_AGENTS[node.agent_type].color}`}>

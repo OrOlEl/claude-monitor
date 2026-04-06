@@ -1,14 +1,24 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useEventStore } from '../stores/eventStore';
 import { useSessionStore } from '../stores/sessionStore';
 
 export function useSocket() {
   const socketRef = useRef(null);
-  const { setConnected, initEvents, addEvent, updateState, initConversations, addConversation, initTeams, updateTeams } = useEventStore();
+  const convBufferRef = useRef([]);
+  const convTimerRef = useRef(null);
+  const { setConnected, initEvents, addEvent, updateState, initConversations, addConversations, initTeams, updateTeams } = useEventStore();
   const { updateFromEvent } = useSessionStore();
+
+  const flushConversations = useCallback(() => {
+    if (convBufferRef.current.length > 0) {
+      addConversations(convBufferRef.current);
+      convBufferRef.current = [];
+    }
+    convTimerRef.current = null;
+  }, [addConversations]);
 
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3847';
@@ -30,11 +40,19 @@ export function useSocket() {
     });
     socket.on('event', (event) => { addEvent(event); updateFromEvent(event); });
     socket.on('state', (stateData) => { updateState(stateData); });
-    socket.on('conversation', (entry) => { addConversation(entry); });
+    socket.on('conversation', (entry) => {
+      convBufferRef.current.push(entry);
+      if (!convTimerRef.current) {
+        convTimerRef.current = setTimeout(flushConversations, 150);
+      }
+    });
     socket.on('team_update', (teams) => { updateTeams(teams); });
 
-    return () => { socket.disconnect(); };
-  }, [setConnected, initEvents, addEvent, updateState, updateFromEvent, initConversations, addConversation, initTeams, updateTeams]);
+    return () => {
+      socket.disconnect();
+      if (convTimerRef.current) clearTimeout(convTimerRef.current);
+    };
+  }, [setConnected, initEvents, addEvent, updateState, updateFromEvent, initConversations, addConversations, initTeams, updateTeams, flushConversations]);
 
   return socketRef.current;
 }

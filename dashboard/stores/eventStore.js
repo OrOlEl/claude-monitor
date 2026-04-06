@@ -11,10 +11,11 @@ export const useEventStore = create((set, get) => ({
   setConnected: (connected) => set({ connected }),
 
   initEvents: (events) => {
-    // Find main session from the first req_start event (most reliable)
-    // The first req_start is always from the main session since it starts first
-    const reqStart = events.find(e => e.type === 'req_start');
-    const sessionId = reqStart?.session_id || (events.length > 0 ? events[0].session_id : null);
+    // Find main session from the most recent req_start event
+    // On refresh, the latest req_start best represents the active session
+    const reqStarts = events.filter(e => e.type === 'req_start');
+    const latestReqStart = reqStarts.length > 0 ? reqStarts[reqStarts.length - 1] : null;
+    const sessionId = latestReqStart?.session_id || (events.length > 0 ? events[0].session_id : null);
     set({ events, sessionId });
   },
 
@@ -41,20 +42,27 @@ export const useEventStore = create((set, get) => ({
     };
   },
 
-  addConversation: (entry) => set((state) => {
-    const isDuplicate = state.conversations.some(conv => {
-      if (entry.uuid && conv.uuid) return entry.uuid === conv.uuid;
-      return entry.type === conv.type &&
-        JSON.stringify(conv.message?.content) === JSON.stringify(entry.message?.content) &&
-        conv.sessionId === entry.sessionId;
-    });
-    if (isDuplicate) return state;
-    const newConversations = [...state.conversations, entry].slice(-500);
-    return { conversations: newConversations };
+  addConversations: (entries) => set((state) => {
+    let convs = state.conversations;
+    let changed = false;
+    for (const entry of entries) {
+      const isDuplicate = convs.some(conv => {
+        if (entry.uuid && conv.uuid) return entry.uuid === conv.uuid;
+        return entry.type === conv.type &&
+          conv.sessionId === entry.sessionId &&
+          conv.timestamp === entry.timestamp;
+      });
+      if (!isDuplicate) {
+        if (!changed) { convs = [...convs]; changed = true; }
+        convs.push(entry);
+      }
+    }
+    if (!changed) return state;
+    return { conversations: convs.slice(-500) };
   }),
 
   addEvent: (event) => set((state) => {
-    const newEvents = [...state.events, event].slice(-500);
+    const newEvents = [...state.events, event].slice(-1000);
     // Keep sessionId sticky - only set if not yet established
     // This prevents tree flickering when subagent events arrive with different session_ids
     // Once the main session is identified, it stays pinned regardless of subagent activity
@@ -398,6 +406,7 @@ export const useEventStore = create((set, get) => ({
           detail: event.detail || '',
           team_name: event.team_name || '',
           agent_name: event.agent_name || '',
+          background: event.background || false,
           flags: event.flags ? event.flags.split(',').filter(Boolean) : [],
           children: [],
         };
